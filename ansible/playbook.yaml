@@ -2,4 +2,4 @@
 - name: homework-2
   hosts: all
   roles:
-    main
+    - main
