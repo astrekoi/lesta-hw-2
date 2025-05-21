@@ -1,0 +1,6 @@
+---
+all:
+  children:
+    main:
+      hosts:
+        lest_host:
