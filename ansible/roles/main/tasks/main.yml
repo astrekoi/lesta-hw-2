@@ -1,0 +1,78 @@
+---
+- name: Create docker group
+  ansible.builtin.group:
+    name: docker
+    state: present
+
+- name: Create docker user
+  ansible.builtin.user:
+    name: docker
+    group: docker
+    append: yes
+    create_home: yes
+
+- name: Create /mnt/docker directory
+  ansible.builtin.file:
+    path: /mnt/docker
+    state: directory
+    owner: docker
+    group: docker
+    mode: '0755'
+
+- name: Create table file in home directory
+  ansible.builtin.copy:
+    dest: ~/table
+    content: |
+      speak
+      loyal
+      famous
+      absorb
+      ice
+      skill
+      galaxy
+      about
+      offer
+      topple
+      argue
+      unusual
+      sing
+      evoke
+  become: no
+
+- name: Find words containing letter 'o'
+  ansible.builtin.command: awk '/o/ {print NR, $0}' ~/table
+  register: awk_output
+  changed_when: false
+  become: no
+
+- name: Display awk results
+  ansible.builtin.debug:
+    var: awk_output.stdout_lines
+
+- name: Install pwgen
+  ansible.builtin.package:
+    name: pwgen
+    state: present
+  when: ansible_os_family == 'Debian'
+
+- name: Generate password for test user
+  ansible.builtin.shell: pwgen -s 16 1
+  register: user_password
+  changed_when: false
+
+- name: Create test group
+  ansible.builtin.group:
+    name: test
+    state: present
+
+- name: Create test user with generated password
+  ansible.builtin.user:
+    name: test
+    password: "{{ user_password.stdout | password_hash('sha512') }}"
+    groups: test
+    append: yes
+
+- name: Delete table file as test user
+  ansible.builtin.command: rm ~/table
+  become: yes
+  become_user: test
