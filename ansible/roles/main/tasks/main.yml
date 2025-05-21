@@ -42,6 +42,7 @@
       unusual
       sing
       evoke
+    mode: '0644'
   become: no
 
 - name: Find words containing letter 'o'
@@ -56,9 +57,11 @@
 
 - name: Install required packages
   block:
-    - name: Install pwgen
-      ansible.builtin.package:
-        name: pwgen
+    - name: Install core dependencies
+      ansible.builtin.apt:
+        name:
+          - pwgen
+          - acl
         state: present
 
     - name: Install passlib via system package
@@ -96,9 +99,19 @@
     create_home: yes
     home: /home/test
 
+- name: Set ACL for Ansible temporary directory
+  ansible.posix.acl:
+    path: /tmp
+    entity: test
+    etype: user
+    permissions: rx
+    state: present
+  become: yes
+
 - name: Delete table file as test user
   ansible.builtin.file:
     path: /home/{{ ansible_user }}/table
     state: absent
   become: yes
   become_user: test
+  become_method: sudo
