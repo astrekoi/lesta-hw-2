@@ -61,11 +61,20 @@
         name: pwgen
         state: present
 
-    - name: Install passlib for password hashing
-      ansible.builtin.pip:
-        name: passlib
+    - name: Install passlib via system package
+      ansible.builtin.apt:
+        name: python3-passlib
         state: present
   when: ansible_os_family == 'Debian'
+  become: yes
+
+- name: Install passlib on controller
+  ansible.builtin.pip:
+    name: passlib
+    state: present
+  delegate_to: localhost
+  run_once: true
+  become: no
 
 - name: Generate password for test user
   ansible.builtin.shell: pwgen -s 16 1
@@ -78,7 +87,7 @@
     name: test
     state: present
 
-- name: Create test user with generated password (fix passlib error)
+- name: Create test user with generated password
   ansible.builtin.user:
     name: test
     password: "{{ user_password.stdout | password_hash('sha512') }}"
