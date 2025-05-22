@@ -1,136 +1,148 @@
 ---
-- name: Set Python interpreter to suppress warnings
+- name: Set explicit Python interpreter
   set_fact:
     ansible_python_interpreter: "/usr/bin/python3"
+  tags: python
 
-- name: Create docker group
-  ansible.builtin.group:
-    name: docker
-    state: present
-
-- name: Create docker user (fix append warning)
-  ansible.builtin.user:
-    name: docker
-    group: docker
-    groups: docker
-    append: yes
-    create_home: yes
-
-- name: Create /mnt/docker directory
-  ansible.builtin.file:
-    path: /mnt/docker
-    state: directory
-    owner: docker
-    group: docker
-    mode: '0755'
-
-- name: Create table file in home directory
-  ansible.builtin.copy:
-    dest: /home/{{ ansible_user }}/table
-    content: |
-      speak
-      loyal
-      famous
-      absorb
-      ice
-      skill
-      galaxy
-      about
-      offer
-      topple
-      argue
-      unusual
-      sing
-      evoke
-    mode: '0644'
-  become: no
-
-- name: Find words containing letter 'o'
-  ansible.builtin.command: awk '/o/ {print NR, $0}' /home/{{ ansible_user }}/table
-  register: awk_output
-  changed_when: false
-  become: no
-
-- name: Display awk results
-  ansible.builtin.debug:
-    var: awk_output.stdout_lines
-
-- name: Install required packages
+- name: Docker group management
   block:
-    - name: Install core dependencies
+    - name: Create docker group
+      ansible.builtin.group:
+        name: "{{ docker_user }}"
+        state: present
+
+    - name: Provision docker user
+      ansible.builtin.user:
+        name: "{{ docker_user }}"
+        group: "{{ docker_user }}"
+        groups: "{{ docker_user }}"
+        append: yes
+        create_home: yes
+        shell: /bin/bash
+
+    - name: Create docker storage directory
+      ansible.builtin.file:
+        path: "/mnt/docker"
+        state: directory
+        owner: "{{ docker_user }}"
+        group: "{{ docker_user }}"
+        mode: '0755'
+  tags: docker
+
+- name: File management tasks
+  block:
+    - name: Deploy word list file
+      ansible.builtin.copy:
+        dest: "/home/{{ ansible_user }}/table"
+        content: |
+          speak
+          loyal
+          famous
+          absorb
+          ice
+          skill
+          galaxy
+          about
+          offer
+          topple
+          argue
+          unusual
+          sing
+          evoke
+        mode: '0644'
+      become: no
+
+    - name: Process file with awk
+      ansible.builtin.command: 
+        cmd: awk '/o/ {print NR, $0}' "/home/{{ ansible_user }}/table"
+      register: awk_output
+      changed_when: false
+      become: no
+
+    - name: Display processing results
+      ansible.builtin.debug:
+        var: awk_output.stdout_lines
+  tags: files
+
+- name: System packages installation
+  block:
+    - name: Install essential utilities
       ansible.builtin.apt:
         name:
           - pwgen
           - acl
         state: present
+        update_cache: yes
 
-    - name: Install passlib via system package
+    - name: Install Python dependencies
       ansible.builtin.apt:
         name: python3-passlib
         state: present
-  when: ansible_os_family == 'Debian'
-  become: yes
 
-- name: Install passlib on controller
-  ansible.builtin.pip:
-    name: passlib
-    state: present
-  delegate_to: localhost
-  run_once: true
-  become: no
-
-- name: Generate password for test user
-  ansible.builtin.shell: pwgen -s 16 1
-  register: user_password
-  changed_when: false
-  no_log: true
-
-- name: Create test group
-  ansible.builtin.group:
-    name: test
-    state: present
-
-- name: Create test user with generated password
-  ansible.builtin.user:
-    name: test
-    password: "{{ user_password.stdout | password_hash('sha512') }}"
-    group: test
-    shell: /bin/bash
-    create_home: yes
-    home: /home/test
-
-- name: Secure file deletion
-  block:
-    - name: Set temp permissions
-      ansible.posix.acl:
-        path: /home/{{ ansible_user }}
-        entity: test
-        etype: user
-        permissions: rwx
+    - name: Ensure controller dependencies
+      ansible.builtin.pip:
+        name: passlib
         state: present
-      become: yes
+      delegate_to: localhost
+      run_once: true
+      become: no
+  when: ansible_os_family == 'Debian'
+  tags: packages
 
-    - name: Delete table file
-      ansible.builtin.file:
-        path: /home/{{ ansible_user }}/table
-        state: absent
-      become: yes
-      become_user: test
+- name: Test user management
+  block:
+    - name: Generate secure password
+      ansible.builtin.shell: 
+        cmd: pwgen -s 16 1
+      register: user_password
+      changed_when: false
+      no_log: true
 
-    - name: Cleanup permissions
-      ansible.posix.acl:
-        path: /home/{{ ansible_user }}
-        entity: test
-        etype: user
-        state: absent
-      become: yes
+    - name: Create dedicated user group
+      ansible.builtin.group:
+        name: "{{ temp_user }}"
+        state: present
 
-- name: Verify file deletion
-  ansible.builtin.stat:
-    path: /home/{{ ansible_user }}/table
-  register: file_stat
+    - name: Provision test user
+      ansible.builtin.user:
+        name: "{{ temp_user }}"
+        password: "{{ user_password.stdout | password_hash('sha512') }}"
+        group: "{{ temp_user }}"
+        shell: /bin/bash
+        create_home: yes
+        home: "/home/{{ temp_user }}"
 
-- name: Show deletion result
-  ansible.builtin.debug:
-    msg: "File successfully deleted"
-  when: not file_stat.stat.exists
+    - name: Secure file cleanup procedure
+      block:
+        - name: Set temporary permissions
+          ansible.posix.acl:
+            path: "/home/{{ ansible_user }}"
+            entity: "{{ temp_user }}"
+            etype: user
+            permissions: rwx
+            state: present
+
+        - name: Remove target file
+          ansible.builtin.file:
+            path: "/home/{{ ansible_user }}/table"
+            state: absent
+
+        - name: Cleanup permissions
+          ansible.posix.acl:
+            path: "/home/{{ ansible_user }}"
+            entity: "{{ temp_user }}"
+            etype: user
+            state: absent
+      tags: cleanup
+
+- name: Check "table" exists
+  block:
+    - name: Verify file deletion
+      ansible.builtin.stat:
+        path: "/home/{{ ansible_user }}/table"
+      register: file_stat
+
+    - name: Show deletion result
+      ansible.builtin.debug:
+        msg: "File successfully deleted"
+      when: not file_stat.stat.exists
