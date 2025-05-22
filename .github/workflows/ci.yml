@@ -31,7 +31,7 @@ jobs:
       - name: Run Ansible Playbook
         working-directory: ansible
         run: |
-          ansible-playbook -i inventory/inventory.yaml playbook.yaml --vault-password-file .vault | tee execution.log
+          ansible-playbook -vvv -i inventory/inventory.yaml playbook.yaml --vault-password-file .vault | tee execution.log
 
       - name: Clean up secrets
         run: |
