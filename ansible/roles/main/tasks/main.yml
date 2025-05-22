@@ -99,19 +99,38 @@
     create_home: yes
     home: /home/test
 
-- name: Set ACL for Ansible temporary directory
-  ansible.posix.acl:
-    path: /tmp
-    entity: test
-    etype: user
-    permissions: rx
-    state: present
-  become: yes
+- name: Secure file deletion
+  block:
+    - name: Set temp permissions
+      ansible.posix.acl:
+        path: /home/{{ ansible_user }}
+        entity: test
+        etype: user
+        permissions: rwx
+        state: present
+      become: yes
 
-- name: Delete table file as test user
-  ansible.builtin.file:
+    - name: Delete table file
+      ansible.builtin.file:
+        path: /home/{{ ansible_user }}/table
+        state: absent
+      become: yes
+      become_user: test
+
+    - name: Cleanup permissions
+      ansible.posix.acl:
+        path: /home/{{ ansible_user }}
+        entity: test
+        etype: user
+        state: absent
+      become: yes
+
+- name: Verify file deletion
+  ansible.builtin.stat:
     path: /home/{{ ansible_user }}/table
-    state: absent
-  become: yes
-  become_user: test
-  become_method: sudo
+  register: file_stat
+
+- name: Show deletion result
+  ansible.builtin.debug:
+    msg: "File successfully deleted"
+  when: not file_stat.stat.exists
